@@ -14,7 +14,7 @@ First let's load some general purpose packages. I use 3 auxiliary packages:
 
 1. The (in)famous "tidyverse" is a set of packages that allows writing a more convenient & reproducible code.
 2. The "lubridate" package supplies tools to extract dates conveniently (a pain-point in base-R)
-3. The "knitr" package, promarily to allow nice display of tables (the ```kable``` function).
+3. The "knitr" package, primarily to allow nice display of tables (the ```kable``` function).
 
 I check for the presence of each package on the local machine and it if it has not been installed yet:
 
@@ -171,7 +171,7 @@ df_users <- df %>%
     )
 ```
 
-In order to decide on a proper threshold for the TRUE/FALSE definotion, let's observe the distribution of percentages:
+In order to decide on a proper threshold for the TRUE/FALSE definition, let's observe the distribution of percentages:
 ```{r}
 df_users %>%
   ggplot(aes(x = weekday_biz_prop)) + geom_histogram()
