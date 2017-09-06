@@ -1,5 +1,7 @@
 ---
-title: "Travel Audience Test"
+title: "User impression - test"
+author: "Yizhar (Izzie) Toren"
+date: "2017-09-06"
 output: 
   html_notebook:
     toc: true
@@ -8,9 +10,25 @@ output:
 
 # Preparations
 
-First let's load some general purpose packages.
+First let's load some general purpose packages. I use 3 auxiliary packages:
+
+1. The (in)famous "tidyverse" is a set of packages that allows writing a more convenient & reproducible code.
+2. The "lubridate" package supplies tools to extract dates conveniently (a pain-point in base-R)
+3. The "knitr" package, promarily to allow nice display of tables (the ```kable``` function).
+
+I check for the presence of each package on the local machine and it if it has not been installed yet:
 
 ```{r, message=FALSE}
+install_if_needed <- function(packages) {
+  for(package in packages) {
+    ## check if the package is installed, if not - install
+    if (length(grep(pattern = paste0('^', package), installed.packages())) == 0) {
+      install.packages(package)
+    }
+  }
+}
+
+install_if_needed(c('tidyverse', 'lubridate', 'knitr', 'rmarkdown'))
 require(tidyverse)
 require(lubridate)
 require(knitr)
@@ -32,9 +50,9 @@ df %>%
 
 In the absence of an "objective" measure or threshold to describe an "active" customer we must rely on relative ranking using the following steps:
 
-### Count per-user impressions
+### Step 1: Count per-user impressions
 
-We count the number of impressions per customer during the entire month. The mose straight forward way is to group by ```uuid``` and count rows:
+We count the number of impressions per customer during the entire month. The most straight forward way is to group by ```uuid``` and count rows:
 
 ```{r}
 df_users <- df %>% 
@@ -44,9 +62,9 @@ df_users <- df %>%
 df_users %>% head(5) %>% kable()
 ```
 
-### Establishing a threshold for ```highly_active``` definition
+### Step 2: Establishing a threshold for ```highly_active``` definition
 
-The summary statistics of the impression count shows that the data probably contain an outlier group (a good clue is the face that the mean value is higher than the 75'th percentile). 
+The summary statistics of the impression count below shows that most users have only a single impression in the data, however there's a small group of users with a very high impression count  and possibly some outliers (a good clue is the fact that the mean value is higher than the 75'th percentile). 
 
 ```{r}
 df_users %>% select(imp_count) %>% summary()
@@ -59,10 +77,9 @@ This is also clearly visible when looking at a simple histogram:
 df_users %>% 
   ggplot(aes(x = imp_count, y = ..density..)) + 
     geom_histogram(bins = 100)
-    
 ```
 
-A slightly different perpecitve (looking at a logarithmic scale) reveals that this is indeed a very small, but definitly no a single outlier. There does not seem to be a "natural" threshold that will clasify users as "highly active".
+A slightly different perspective (looking at a logarithmic scale) reveals that while the group of users with high impression count is small, but the skewness of the distribution is not the result of a single outlier. The the fact that we have users with counts across the scale means that there does not seem to be a "natural" threshold that will classify users as "highly active".
 
 ```{r}
 df_users %>% 
@@ -71,7 +88,7 @@ df_users %>%
     scale_x_log10()
 ```
 
-I therefore use conventional wisdom and try to set the theshold by quantiles:
+I therefore use conventional wisdom and try to set the threshold by quantiles:
 
 ```{r}
 probs <- c(0.01 * 90:98, 0.001 * 990:1000)
@@ -95,30 +112,33 @@ df_users <- df %>%
   summarize(imp_count = n()) %>% 
   ## Adding the threshold
   mutate(highly_active = imp_count > 10)
+```
 
+Plotting the histogram:
+```{r}
 df_users %>%
   count(highly_active) %>% 
   ggplot(aes(x = highly_active, y = n)) + geom_bar(stat = 'identity')
 ```
 
+
 ## The ```multiple_days``` feature
 
-This feature can be calculated by looking only on the date part in the ```ts``` timestamp and counting distinct values: 
+This feature can be calculated by looking only on the date part in the ```ts``` time-stamp and counting distinct values: 
 
 ```{r}
 df_users <- df %>% 
-  ## Adding a date only field
+  ## Adding a "date only" field
   mutate(imp_date = as.Date(ts)) %>% 
   group_by(uuid) %>% 
-  summarize(
-    imp_count = n(),
-    active_days = n_distinct(imp_date)) %>% 
-  ## And additng to the summary
-  mutate(
-    highly_active = imp_count > 10,
-    multiple_days = active_days > 1
-    )
+  ## count distinct dates
+  summarize(active_days = n_distinct(imp_date)) %>% 
+  ## mark users with more than a single day
+  mutate(multiple_days = active_days > 1)
+```
 
+Plotting the histogram 
+```{r}
 df_users %>%
   count(multiple_days) %>% 
   ggplot(aes(x = multiple_days, y = n)) + geom_bar(stat = 'identity')
@@ -126,13 +146,12 @@ df_users %>%
 
 ## The ```weekday_biz``` feature
 
-I define weekday business hours as Mon - Fri, 08:00 - 17:00. Using a similar approach I calculate for each user the % of impressions that occured in this time window:
+I define weekday business hours as Mon - Fri, 08:00 - 17:00. Using a similar approach I calculate for each user the % of impressions that occurred in this time window:
 
 
 ```{r}
 df_users <- df %>% 
   mutate(
-    imp_date = as.Date(ts),
     ## We add the weekday and hour for criteria calculation
     imp_weekday = wday(ts), 
     imp_hour = hour(ts),
@@ -141,24 +160,24 @@ df_users <- df %>%
     ) %>% 
   group_by(uuid) %>% 
   summarize(
+    ## Count total impressions
     imp_count = n(),
-    active_days = n_distinct(imp_date),
-    ## And count impressions    
+    ## And count impressions that answer the criteria  
     weekday_biz_count = sum(imp_weekday_biz)
     ) %>% 
-  ## And additng to the summary
   mutate(
-    highly_active = imp_count > 10,
-    multiple_days = active_days > 1,
     weekday_biz_prop = weekday_biz_count / imp_count,
     weekday_biz = weekday_biz_prop > 0.5
     )
+```
 
+In order to decide on a proper threshold for the TRUE/FALSE definotion, let's observe the distribution of percentages:
+```{r}
 df_users %>%
   ggplot(aes(x = weekday_biz_prop)) + geom_histogram()
 ```
 
-Unlike the ```highly_active``` feature, it would seem that users are concetrate their activity either in the business hours or outside the business hours (with only a few users splitting their time in between). A reasonable threshould would therefore be 0.5 (was calculated above). 
+Unlike the ```highly_active``` feature, it would seem that users are concentrate their activity either in the business hours or outside the business hours (with only a few users splitting their time in between). A reasonable threshold would therefore be 0.5 (was calculated above). 
 
 ```{r}
 df_users %>% 
@@ -180,7 +199,9 @@ df_IP <- df %>%
     imp_count = n(),
     user_count = n_distinct(uuid)
   )
+```
 
+```{r}
 df_IP %>%
   select(imp_count, user_count) %>% 
   summary()
@@ -195,18 +216,11 @@ df_IP %>%
     scale_x_log10()
 ```
 
-We can now match every single impression with the IP information, and see what proprtion of usee impressions was made on shared IPs (with ```user_count``` > 1). The code below describes the complete calculation of all features 
+We can now match every single impression with the IP information, and see what proportion of user impressions was made on shared IPs (with ```user_count``` > 1). The code below describes the complete calculation of all features 
 
 
 ```{r}
 df_users <- df %>% 
-  mutate(
-    imp_date = as.Date(ts),
-    imp_weekday = wday(ts), 
-    imp_hour = hour(ts),
-    imp_weekday_biz = if_else(
-      imp_weekday > 1 & imp_weekday < 7 & imp_hour >= 8 & imp_hour <=17, 1, 0)
-    ) %>% 
   ## matching to the IP data and identify shared IPs
   left_join(
     df %>% 
@@ -216,31 +230,26 @@ df_users <- df %>%
         IP_user_count = n_distinct(uuid)
         ),
     by = c('hashed_ip' = 'hashed_ip')
-    ) %>% 
+    ) %>%
   mutate(shared_IP = IP_user_count > 1) %>%
   group_by(uuid) %>% 
+  ## aggregating the shared_IP counts
   summarize(
     imp_count = n(),
-    active_days = n_distinct(imp_date),
-    weekday_biz_count = sum(imp_weekday_biz),
-    ## aggregating the shared_IP counts
-    shared_IP_count = sum(shared_IP)
-    ) %>% 
-  ## And additng to the summary
+    shared_IP_count = sum(shared_IP)) %>% 
+  ## Calculate proprtion of shared IP impressions
   mutate(
-    highly_active = imp_count > 10,
-    multiple_days = active_days > 1,
-    weekday_biz_prop = weekday_biz_count / imp_count,
-    weekday_biz = weekday_biz_prop > 0.5,
     shared_IP_prop = shared_IP_count / imp_count,
     shared_IP_user = shared_IP_prop > 0.5
     )
-
+```
+As before, the distribution of the percentages will allow us to make a more informed decision on the nature of the calculated feature:
+```{r}
 df_users %>% 
   ggplot(aes(shared_IP_prop)) + geom_histogram()
 ```
 
-Since most user either use a unique IP or a shared IP for all of their imporessions, we can set a threshold for this feature at 0.5 (as calcuated above)
+Since most users either use a unique IP or a shared IP for all of their impressions, we can set a threshold at 0.5 (as calculated above) and make this into a binary TRUE/FALSE feature:
 
 ```{r}
 df_users %>% 
@@ -250,7 +259,7 @@ df_users %>%
 
 
 ## The final code
-With a cleanup stage at the end and some documentation in the comments
+With a cleanup stage at the end and some documentation in the comments:
 
 ```{r, echo = TRUE}
 df_users <- df %>% 
@@ -297,7 +306,11 @@ df_users <- df %>%
     ) %>% 
   # Cleaup
   select(-imp_count, -active_days, -weekday_biz_count, -shared_IP_count, -weekday_biz_prop, -shared_IP_prop)
+```
 
+And the resulting table:
+
+```{r}
 df_users %>% head(5) %>% kable()
 ```
 
@@ -307,22 +320,24 @@ df_users %>% head(5) %>% kable()
 To allow more efficient processing of the feature extraction process (and to also demonstrate how the following actions can be scaled up to Spark / Hadoop machines) the first step is to partition the data (or "nest" in R terminology). Since we are not going to explore cross-user features at this time, we can partition data by ```uuid```
 
 ```{r}
-df_user <- df %>% nest(-uuid)
-dim(df_user)
+df_users_nested <- df %>% nest(-uuid) 
 ```
 
 The new data structure contains the key ```uuid``` and a list of data frames (one per user).
 
 ```{r}
-df_user %>% colnames()
+df_users_nested %>% colnames()
 ```
 
 We can now calculate the same features with "map / reduce" approach that can be easily distributed and parallelized. For example, counting impressions per user:
 
 ```{r}
-df_user <- df_user %>% 
+df_users_nested <- df_users_nested %>% 
   mutate(
     imp_count = map_int(.x = data, .f = function(x) dim(x)[1])
     )
-df_user %>% select(-data, -uuid) %>% summary()
+df_users_nested %>% select(-data, -uuid) %>% summary()
 ```
+
+Which shows exactly the same results as before. 
+
