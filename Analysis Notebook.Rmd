@@ -1,11 +1,13 @@
 ---
 title: "User impression - test"
 author: "Yizhar (Izzie) Toren"
-date: "2017-09-06"
-output: 
+date: '2017-09-06'
+output:
   html_notebook:
-    toc: true
-    number_sections: true
+    number_sections: yes
+    toc: yes
+  html_document:
+    toc: yes
 ---
 
 # Preparations
@@ -44,7 +46,26 @@ df %>%
   kable()
 ```
 
-# Calculating Features
+# General statistics
+
+The file contains ~670k impressions, with the following data for each impression:
+
+* ```uuid```: A hashed cookie ID (I'll treat it as a user ID for this analysis)
+* ```ts```: A time-stamp
+* ```useragent```: A the user-agent string (identifies the browser user for viewing the page)
+* ```hashed_ip```: Hashed IP address 
+
+When looking at the ```ts``` distribution we can see that the data comes from a single month, and that activity seems to be increasing with time. 
+
+```{r} 
+df %>%
+  count(date = as.Date(ts)) %>% 
+  ggplot(aes(x = date, y = n)) + 
+    geom_bar(stat = 'identity') + 
+    geom_smooth()
+```
+
+# Calculating User Features
 
 ## The ```highly_active``` feature
 
